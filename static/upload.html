@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <title>Telegram 文件上传</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            font-family: "Segoe UI", "PingFang SC", "Helvetica Neue", sans-serif;
+        }
+
+        body {
+            background: #f7f9fc;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+
+        .upload-box {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 500px;
+        }
+
+        h2 {
+            text-align: center;
+            margin-bottom: 20px;
+            color: #333;
+        }
+
+        input[type="password"] {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 15px;
+            border-radius: 6px;
+            border: 1px solid #ccc;
+        }
+
+        .drop-zone {
+            border: 2px dashed #ccc;
+            border-radius: 10px;
+            padding: 20px;
+            text-align: center;
+            color: #aaa;
+            margin-bottom: 20px;
+            cursor: pointer;
+        }
+
+        .drop-zone.dragover {
+            background-color: #f0f8ff;
+            border-color: #4a90e2;
+            color: #333;
+        }
+
+        #file-list {
+            margin-top: 10px;
+        }
+
+        .file-item {
+            margin-bottom: 12px;
+        }
+
+        .progress-bar {
+            background-color: #e0e0e0;
+            border-radius: 5px;
+            overflow: hidden;
+            height: 10px;
+            margin-top: 5px;
+        }
+
+        .progress-bar-inner {
+            height: 100%;
+            background-color: #4a90e2;
+            width: 0%;
+        }
+
+        button {
+            width: 100%;
+            background-color: #4a90e2;
+            color: white;
+            padding: 12px;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            cursor: pointer;
+            margin-top: 15px;
+        }
+
+        button:hover {
+            background-color: #357ac8;
+        }
+
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+
+        textarea {
+            width: 100%;
+            margin-top: 5px;
+            font-size: 13px;
+            font-family: monospace;
+        }
+    </style>
+    <script>
+        if (!sessionStorage.getItem("pwd")) {
+            window.location.href = "login.html";
+        }
+    </script>
+
+</head>
+<body>
+<div class="upload-box">
+    <h2>上传文件到 Telegram</h2>
+    <div class="drop-zone" id="drop-zone">拖拽文件到此处，或点击选择</div>
+    <input type="file" id="file-input" multiple style="display: none;">
+    <div id="file-list"></div>
+    <button id="upload-btn" onclick="uploadFiles()">开始上传</button>
+</div>
+
+<!-- 弹窗 -->
+<div id="result-modal"
+     style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.6); z-index:9999; justify-content:center; align-items:center;">
+    <div style="background:white; max-height:90vh; overflow-y:auto; width:90%; max-width:600px; padding:20px; border-radius:10px;">
+        <h3>上传成功 🎉</h3>
+        <div id="result-links"></div>
+        <button onclick="closeModal()" style="margin-top:15px;">关闭</button>
+    </div>
+</div>
+
+<script>
+    const dropZone = document.getElementById("drop-zone");
+    const fileInput = document.getElementById("file-input");
+    const fileList = document.getElementById("file-list");
+    let selectedFiles = [];
+
+    dropZone.addEventListener("click", () => fileInput.click());
+    dropZone.addEventListener("dragover", e => {
+        e.preventDefault();
+        dropZone.classList.add("dragover");
+    });
+    dropZone.addEventListener("dragleave", () => dropZone.classList.remove("dragover"));
+    dropZone.addEventListener("drop", e => {
+        e.preventDefault();
+        dropZone.classList.remove("dragover");
+        handleFiles(e.dataTransfer.files);
+    });
+    fileInput.addEventListener("change", () => handleFiles(fileInput.files));
+
+    function handleFiles(files) {
+        selectedFiles = Array.from(files);
+        fileList.innerHTML = "";
+        selectedFiles.forEach((file, index) => {
+            const div = document.createElement("div");
+            div.className = "file-item";
+            div.innerHTML = `<strong>${file.name}</strong><div class="progress-bar"><div id="bar-${index}" class="progress-bar-inner"></div></div>`;
+            fileList.appendChild(div);
+        });
+    }
+
+    let uploadResponses = [];
+    let filesUploaded = 0;
+
+    function uploadFiles() {
+        const pwd = sessionStorage.getItem("pwd");
+
+        const uploadBtn = document.getElementById("upload-btn");
+        uploadBtn.disabled = true;
+        uploadBtn.textContent = "上传中...";
+
+        uploadResponses = [];
+        filesUploaded = 0;
+
+        selectedFiles.forEach((file, index) => {
+            const formData = new FormData();
+            formData.append("pwd", pwd);
+            formData.append("file", file);
+
+            const xhr = new XMLHttpRequest();
+            xhr.open("POST", "/upload", true);
+
+            xhr.upload.onprogress = e => {
+                if (e.lengthComputable) {
+                    const percent = (e.loaded / e.total) * 100;
+                    document.getElementById(`bar-${index}`).style.width = percent + "%";
+                }
+            };
+
+            xhr.onload = () => {
+                filesUploaded++;
+                if (xhr.status === 200) {
+                    try {
+                        const data = JSON.parse(xhr.responseText);
+                        uploadResponses.push(data);
+                    } catch (e) {
+                        alert("响应格式错误：" + xhr.responseText);
+                    }
+                } else {
+                    alert(`上传失败：${xhr.statusText}`);
+                }
+
+                if (filesUploaded === selectedFiles.length) {
+                    uploadBtn.disabled = false;
+                    uploadBtn.textContent = "开始上传";
+                    showResultModal(uploadResponses);
+                }
+            };
+
+            xhr.send(formData);
+        });
+    }
+
+    function showResultModal(list) {
+        const container = document.getElementById("result-links");
+        container.innerHTML = "";
+        list.forEach(file => {
+            const html = `<a href=\"${file.download_url}\" target=\"_blank\">点击下载</a>`;
+            const md = `[点击下载](${file.download_url})`;
+            const bb = `[url=${file.download_url}]点击下载[/url]`;
+
+            const div = document.createElement("div");
+            div.style.marginBottom = "20px";
+            div.innerHTML = `
+          <strong>${file.filename}</strong><br>
+          <textarea readonly>${file.download_url}</textarea>
+          <button onclick=\"copyText(this)\">复制 URL</button><br>
+          <textarea readonly>${html}</textarea>
+          <button onclick=\"copyText(this)\">复制 HTML</button><br>
+          <textarea readonly>${md}</textarea>
+          <button onclick=\"copyText(this)\">复制 Markdown</button><br>
+          <textarea readonly>${bb}</textarea>
+          <button onclick=\"copyText(this)\">复制 BBCode</button>
+        `;
+            container.appendChild(div);
+        });
+        document.getElementById("result-modal").style.display = "flex";
+    }
+
+    function copyText(btn) {
+        const textarea = btn.previousElementSibling;
+        textarea.select();
+        document.execCommand("copy");
+        btn.textContent = "✅ 已复制！";
+        setTimeout(() => btn.textContent = "复制", 1500);
+    }
+
+    function closeModal() {
+        document.getElementById("result-modal").style.display = "none";
+    }
+</script>
+</body>
+</html>

@@ -1,0 +1,135 @@
+name: Build Static Executables
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.tag.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get Next Version Tag
+        id: tag
+        run: |
+          git fetch --tags
+          latest=$(git tag | grep '^v' | sort -V | tail -n1)
+          echo "Latest tag: $latest"
+
+          if [[ "$latest" == "" ]]; then
+            version="v1.0.0"
+          else
+            IFS='.' read -ra parts <<< "${latest#v}"
+            major=${parts[0]}
+            minor=${parts[1]}
+            patch=${parts[2]}
+            patch=$((patch+1))
+            version="v$major.$minor.$patch"
+          fi
+
+          echo "New version: $version"
+          echo "version=$version" >> $GITHUB_OUTPUT
+
+      - name: Create Git Tag
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git
+          git tag ${{ steps.tag.outputs.version }}
+          git push origin ${{ steps.tag.outputs.version }}
+
+  build:
+    needs: tag
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: linux
+            goarch: arm
+            goarm: 6
+          - goos: linux
+            goarch: arm
+            goarm: 7
+          - goos: linux
+            goarch: 386
+          - goos: linux
+            goarch: ppc64le
+          - goos: linux
+            goarch: s390x
+          - goos: linux
+            goarch: riscv64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+          - goos: windows
+            goarch: amd64
+          - goos: windows
+            goarch: arm64
+          - goos: freebsd
+            goarch: amd64
+          - goos: freebsd
+            goarch: arm64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Build Binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          GOARM: ${{ matrix.goarm || '' }}
+        run: |
+          mkdir -p dist
+          ext=""
+          if [[ "${GOOS}" == "windows" ]]; then ext=".exe"; fi
+          
+          suffix="${GOOS}-${GOARCH}"
+          if [[ "${GOARCH}" == "arm" && -n "${GOARM}" ]]; then
+            suffix="${suffix}v${GOARM}"
+          fi
+          
+          output="dist/oci-agent-${suffix}${ext}"
+          echo "Building $output"
+
+          CGO_ENABLED=0 go build -ldflags="-s -w" -o "$output" main.go
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: oci-agent-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goarm && format('v{0}', matrix.goarm) || '' }}
+          path: dist/oci-agent-*
+
+  release:
+    needs: [ tag, build ]
+    runs-on: ubuntu-latest
+    name: Create GitHub Release
+    steps:
+      - name: Download All Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.tag.outputs.version }}
+          name: Release ${{ needs.tag.outputs.version }}
+          files: artifacts/**/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
