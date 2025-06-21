@@ -12,10 +12,10 @@
 
 - `-port`：服务运行端口（可以不用配置，默认为8080）
 - `-bot_token`：Telegram机器人Token
-- `-chat_id`：Telegram个人ID（由于目前没有任何交互，暂时可以不用配置）
+- `-chat_id`：Telegram个人ID（如果不配置，则默认所有人都可以操作机器人）
 - `-access_pwd`：前端 web 页面访问的密码，出于安全考虑，必须配置
 - `-proxy`：代理url（可以不用配置，目前仅支持HTTP代理）
-- `-base_url`：用于TG机器人回复制定文件`get`获取完整URL链接（可以不用配置）
+- `-base_url`：用于TG机器人回复指定文件`get`获取完整URL链接（可以不用配置）
 
 完整命令后台运行：
 
@@ -53,6 +53,7 @@ BOT_TOKEN=7430196666:AAHgQ_XXX
 CHAT_ID=6194666666
 ACCESS_PWD=yohann
 PROXY=
+BASE_URL=
 EOF
 ```
 
@@ -105,6 +106,8 @@ cd /app/tg-disk && docker-compose up -d
 ![image.png](./img/3.png)
 
 ![image.png](./img/4.png)
+
+![image.png](./img/5.png)
 
 ## ⭐Stargazers over time
 
