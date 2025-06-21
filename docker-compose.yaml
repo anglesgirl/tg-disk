@@ -1,0 +1,9 @@
+services:
+  tg-disk:
+    image: ghcr.io/yohann0617/tg-disk:master
+    container_name: tg-disk
+    restart: always
+    ports:
+      - "8888:8080"
+    volumes:
+      - .env:/app/.env
