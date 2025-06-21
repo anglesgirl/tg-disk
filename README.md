@@ -15,11 +15,12 @@
 - `-chat_id`：Telegram个人ID（由于目前没有任何交互，暂时可以不用配置）
 - `-access_pwd`：前端 web 页面访问的密码，出于安全考虑，必须配置
 - `-proxy`：代理url（可以不用配置，目前仅支持HTTP代理）
+- `-base_url`：用于TG机器人回复制定文件`get`获取完整URL链接（可以不用配置）
 
 完整命令后台运行：
 
 ```bash
-nohup ./tg_disk -port 8080 -bot_token 7430196666:AAHgQ_XXXX -chat_id 6194666666 -access_pwd yohann -proxy http://127.0.0.1:10808 > /dev/null 2>&1 &
+nohup ./tg_disk -port 8080 -bot_token 7430196666:AAHgQ_XXXX -chat_id 6194666666 -access_pwd yohann -proxy http://127.0.0.1:10808 -base_url https://my-tg-disk.com > /dev/null 2>&1 &
 ```
 
 快速启动后台运行：
@@ -79,7 +80,7 @@ cd /app/tg-disk && docker-compose up -d
 
 ## 👶如何使用
 
-部署成功后，直接`http://IP:端口`即可访问，支持同时上传多个文件。单个文件大小**不能超过20MB**，否则无法通过URL下载。
+部署成功后，直接`http://IP:端口`即可访问，支持同时上传多个文件。单个文件大小**不能超过20MB**，否则无法通过URL下载。私聊机器人指定某个文件回复`get`，即可获取完整的URL链接。
 
 ### 🌏Nginx反向代理
 

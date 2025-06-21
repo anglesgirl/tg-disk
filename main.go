@@ -48,6 +48,7 @@ func main() {
 	accessPwdFlag := flag.String("access_pwd", "", "访问密码")
 	proxyFlag := flag.String("proxy", "", "HTTP 代理地址")
 	chatIDFlag := flag.String("chat_id", "", "Telegram Chat ID")
+	baseURLFlag := flag.String("base_url", "", "服务的基础 URL，例如 https://yourdomain.com")
 	flag.Parse()
 
 	envLoaded := false
@@ -86,6 +87,7 @@ func main() {
 	overrideEnv("ACCESS_PWD", *accessPwdFlag)
 	overrideEnv("PROXY", *proxyFlag)
 	overrideEnv("CHAT_ID", *chatIDFlag)
+	overrideEnv("BASE_URL", *baseURLFlag)
 
 	// 读取最终环境变量
 	port := os.Getenv("PORT")
@@ -93,6 +95,7 @@ func main() {
 	accessPwd = os.Getenv("ACCESS_PWD")
 	proxyStr := os.Getenv("PROXY")
 	chatIDStr := os.Getenv("CHAT_ID")
+	baseURL := os.Getenv("BASE_URL")
 
 	// 检查必填
 	if port == "" && !envLoaded {
@@ -133,6 +136,46 @@ func main() {
 		}
 	}
 
+	go func() {
+		u := tgbotapi.NewUpdate(0)
+		u.Timeout = 60
+		updates := bot.GetUpdatesChan(u)
+
+		for update := range updates {
+			if update.Message == nil || update.Message.ReplyToMessage == nil {
+				continue
+			}
+
+			// 只处理私聊
+			if update.Message.Chat.IsPrivate() && strings.TrimSpace(update.Message.Text) == "get" {
+				if baseURL == "" {
+					msg := tgbotapi.NewMessage(update.Message.Chat.ID, "未配置 BASE_URL 参数，无法获取完整URL链接")
+					bot.Send(msg)
+					continue
+				}
+
+				replyMsg := update.Message.ReplyToMessage
+				if replyMsg.Document != nil {
+					fileID := replyMsg.Document.FileID
+					filename := replyMsg.Document.FileName
+					downloadURL := fmt.Sprintf("%s/d?file_id=%s&filename=%s",
+						strings.TrimRight(baseURL, "/"), fileID, url.QueryEscape(filename))
+
+					if update.Message.Chat.ID != chatID {
+						msg := tgbotapi.NewMessage(update.Message.Chat.ID, "无权限获取URL链接")
+						bot.Send(msg)
+					} else {
+						msg := tgbotapi.NewMessage(update.Message.Chat.ID, "文件 ["+filename+"] 下载链接：\n"+downloadURL)
+						bot.Send(msg)
+					}
+				} else {
+					msg := tgbotapi.NewMessage(update.Message.Chat.ID, "请回复一个文件消息")
+					bot.Send(msg)
+				}
+			}
+		}
+	}()
+
 	httpFS, err := fs.Sub(embeddedFiles, "static")
 	if err != nil {
 		log.Fatal(err)
@@ -172,16 +215,28 @@ func handleUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	tmp, err := os.CreateTemp("", "upload_*_"+sanitize(header.Filename))
+	tmpDir, err := os.MkdirTemp("", "upload_")
+	if err != nil {
+		http.Error(w, "创建临时目录失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer os.RemoveAll(tmpDir) // 删除整个临时目录
+
+	tmpPath := filepath.Join(tmpDir, header.Filename)
+	tmp, err := os.Create(tmpPath)
 	if err != nil {
 		http.Error(w, "创建临时文件失败: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	defer os.Remove(tmp.Name())
-	io.Copy(tmp, file)
-	tmp.Close()
+	defer tmp.Close()
 
-	doc := tgbotapi.NewDocument(chatID, tgbotapi.FilePath(tmp.Name()))
+	_, err = io.Copy(tmp, file)
+	if err != nil {
+		http.Error(w, "写入临时文件失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	doc := tgbotapi.NewDocument(chatID, tgbotapi.FilePath(tmpPath))
 	doc.Caption = header.Filename
 	msg, err := bot.Send(doc)
 	if err != nil {
@@ -263,15 +318,6 @@ func handleVerify(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func sanitize(name string) string {
-	return strings.Map(func(r rune) rune {
-		if r > 127 || r == '/' || r == '\\' || r == ' ' {
-			return '_'
-		}
-		return r
-	}, name)
-}
-
 func getScheme(r *http.Request) string {
 	// 优先使用反向代理头部判断协议
 	if proto := r.Header.Get("X-Forwarded-Proto"); proto != "" {
@@ -288,23 +334,4 @@ func isPreviewable(contentType string) bool {
 		strings.HasPrefix(contentType, "video/") ||
 		strings.HasPrefix(contentType, "audio/") ||
 		contentType == "application/pdf"
-}
-
-func newBotWithProxy(token, proxyStr string) (*tgbotapi.BotAPI, error) {
-	bot, err := tgbotapi.NewBotAPI(token)
-	if err != nil {
-		return nil, err
-	}
-	if proxyStr != "" {
-		proxyURL, err := url.Parse(proxyStr)
-		if err != nil {
-			return nil, err
-		}
-		bot.Client = &http.Client{
-			Transport: &http.Transport{
-				Proxy: http.ProxyURL(proxyURL),
-			},
-		}
-	}
-	return bot, nil
 }
