@@ -103,6 +103,8 @@ cd /app/tg-disk && docker-compose up -d
 
 ![image.png](./img/3.png)
 
+![image.png](./img/4.png)
+
 ## ⭐Stargazers over time
 
 [![Stargazers over time](https://starchart.cc/Yohann0617/tg-disk.svg?variant=adaptive)](https://starchart.cc/Yohann0617/oci-helper)
