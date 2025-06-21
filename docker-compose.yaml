@@ -4,6 +4,6 @@ services:
     container_name: tg-disk
     restart: always
     ports:
-      - "8888:8080"
+      - "8080:8080"
     volumes:
       - .env:/app/.env
