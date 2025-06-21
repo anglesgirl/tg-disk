@@ -108,24 +108,28 @@ func main() {
 		log.Fatal("CHAT_ID 格式错误，应为数字:", err)
 	}
 
-	proxyURL, err := url.Parse(proxyStr)
-	if err != nil {
-		log.Fatal("代理地址格式错误:", err)
-	}
-
-	client := &http.Client{
-		Transport: &http.Transport{
-			Proxy: http.ProxyURL(proxyURL),
-		},
-	}
-	bot, err = tgbotapi.NewBotAPIWithClient(botToken, tgbotapi.APIEndpoint, client)
-	if err != nil {
-		log.Fatal("初始化 Bot 失败:", err)
-	}
-
 	if proxyStr != "" {
+		proxyURL, err := url.Parse(proxyStr)
+		if err != nil {
+			log.Fatal("代理地址格式错误:", err)
+		}
+
+		client := &http.Client{
+			Transport: &http.Transport{
+				Proxy: http.ProxyURL(proxyURL),
+			},
+		}
+		bot, err = tgbotapi.NewBotAPIWithClient(botToken, tgbotapi.APIEndpoint, client)
+		if err != nil {
+			log.Fatal("初始化 Bot 失败:", err)
+		}
 		http.DefaultTransport = &http.Transport{
 			Proxy: http.ProxyURL(proxyURL),
+		}
+	} else {
+		bot, err = tgbotapi.NewBotAPI(botToken)
+		if err != nil {
+			log.Fatal("初始化 Bot 失败:", err)
 		}
 	}
 
