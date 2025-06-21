@@ -273,6 +273,10 @@ func sanitize(name string) string {
 }
 
 func getScheme(r *http.Request) string {
+	// 优先使用反向代理头部判断协议
+	if proto := r.Header.Get("X-Forwarded-Proto"); proto != "" {
+		return proto
+	}
 	if r.TLS != nil {
 		return "https"
 	}
