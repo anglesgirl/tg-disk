@@ -104,7 +104,7 @@ jobs:
             suffix="${suffix}v${GOARM}"
           fi
           
-          output="dist/oci-agent-${suffix}${ext}"
+          output="dist/tg-disk-${suffix}${ext}"
           echo "Building $output"
 
           CGO_ENABLED=0 go build -ldflags="-s -w" -o "$output" main.go
@@ -112,8 +112,8 @@ jobs:
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: oci-agent-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goarm && format('v{0}', matrix.goarm) || '' }}
-          path: dist/oci-agent-*
+          name: tg-disk-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goarm && format('v{0}', matrix.goarm) || '' }}
+          path: dist/tg-disk-*
 
   release:
     needs: [ tag, build ]
