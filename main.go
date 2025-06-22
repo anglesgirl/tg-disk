@@ -137,11 +137,18 @@ func main() {
 	}
 
 	go func() {
+		_, _ = bot.Send(tgbotapi.NewMessage(chatID, "🤖tg-disk服务启动成功🎉🎉\n\n"+
+			"指定文件回复get获取URL链接\n\n源码地址：https://github.com/Yohann0617/tg-disk"))
+
 		u := tgbotapi.NewUpdate(0)
 		u.Timeout = 60
 		updates := bot.GetUpdatesChan(u)
 
 		for update := range updates {
+			if update.Message.From.ID != chatID {
+				_, _ = bot.Send(tgbotapi.NewMessage(update.Message.From.ID, "您无权限使用此机器人"))
+			}
+
 			if update.Message == nil || update.Message.ReplyToMessage == nil {
 				continue
 			}
@@ -149,28 +156,49 @@ func main() {
 			// 只处理私聊
 			if update.Message.Chat.IsPrivate() && strings.TrimSpace(update.Message.Text) == "get" {
 				if baseURL == "" {
-					msg := tgbotapi.NewMessage(update.Message.Chat.ID, "未配置 BASE_URL 参数，无法获取完整URL链接")
-					bot.Send(msg)
+					msg := tgbotapi.NewMessage(update.Message.From.ID, "未配置 BASE_URL 参数，无法获取完整URL链接")
+					_, _ = bot.Send(msg)
 					continue
 				}
 
-				replyMsg := update.Message.ReplyToMessage
-				if replyMsg.Document != nil {
-					fileID := replyMsg.Document.FileID
-					filename := replyMsg.Document.FileName
-					downloadURL := fmt.Sprintf("%s/d?file_id=%s&filename=%s",
-						strings.TrimRight(baseURL, "/"), fileID, url.QueryEscape(filename))
+				var msg *tgbotapi.Message
+				if update.Message != nil {
+					msg = update.Message
+				}
 
-					if update.Message.Chat.ID != chatID {
-						msg := tgbotapi.NewMessage(update.Message.Chat.ID, "无权限获取URL链接")
-						bot.Send(msg)
-					} else {
-						msg := tgbotapi.NewMessage(update.Message.Chat.ID, "文件 ["+filename+"] 下载链接：\n"+downloadURL)
-						bot.Send(msg)
-					}
+				var fileID, fileName string
+				replyToMessage := msg.ReplyToMessage
+
+				switch {
+				case replyToMessage.Document != nil && replyToMessage.Document.FileID != "":
+					fileID = replyToMessage.Document.FileID
+					fileName = replyToMessage.Document.FileName
+				case replyToMessage.Video != nil && replyToMessage.Video.FileID != "":
+					fileID = replyToMessage.Video.FileID
+					fileName = replyToMessage.Video.FileName
+				case replyToMessage.Audio != nil && replyToMessage.Audio.FileID != "":
+					fileID = replyToMessage.Audio.FileID
+					fileName = replyToMessage.Audio.FileName
+				case replyToMessage.Animation != nil && replyToMessage.Animation.FileID != "":
+					fileID = replyToMessage.Animation.FileID
+					fileName = replyToMessage.Animation.FileName
+				case replyToMessage.Sticker != nil && replyToMessage.Sticker.FileID != "":
+					fileID = replyToMessage.Sticker.FileID
+					fileName = replyToMessage.Sticker.Emoji
+				}
+
+				downloadURL := fmt.Sprintf("%s/d?file_id=%s&filename=%s",
+					strings.TrimRight(baseURL, "/"), fileID, url.QueryEscape(fileName))
+
+				var msgRsp tgbotapi.MessageConfig
+				if fileID != "" {
+					msgRsp = tgbotapi.NewMessage(update.Message.From.ID, "文件 ["+fileName+"] 下载链接：\n"+downloadURL)
 				} else {
-					msg := tgbotapi.NewMessage(update.Message.Chat.ID, "请回复一个文件消息")
-					bot.Send(msg)
+					msgRsp = tgbotapi.NewMessage(update.Message.From.ID, "无法获取自己上传的文件ID")
+				}
+				_, err := bot.Send(msgRsp)
+				if err != nil {
+					log.Println(err)
 				}
 			}
 		}
@@ -245,12 +273,24 @@ func handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var fileId string
+	switch {
+	case msg.Document != nil:
+		fileId = msg.Document.FileID
+	case msg.Audio != nil:
+		fileId = msg.Audio.FileID
+	case msg.Video != nil:
+		fileId = msg.Video.FileID
+	case msg.Sticker != nil:
+		fileId = msg.Sticker.FileID
+	}
+
 	downloadURL := fmt.Sprintf("%s://%s/d?file_id=%s&filename=%s",
-		getScheme(r), r.Host, msg.Document.FileID, header.Filename)
+		getScheme(r), r.Host, fileId, header.Filename)
 
 	result := UploadResult{
 		Filename:    header.Filename,
-		FileID:      msg.Document.FileID,
+		FileID:      fileId,
 		DownloadURL: downloadURL,
 	}
 	w.Header().Set("Content-Type", "application/json")
