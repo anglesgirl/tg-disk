@@ -154,7 +154,8 @@ func main() {
 			}
 
 			// 只处理私聊
-			if update.Message.Chat.IsPrivate() && strings.TrimSpace(update.Message.Text) == "get" {
+			msgText := strings.TrimSpace(update.Message.Text)
+			if update.Message.Chat.IsPrivate() && (msgText == "get" || msgText == "/get") {
 				if baseURL == "" {
 					msg := tgbotapi.NewMessage(update.Message.From.ID, "未配置 BASE_URL 参数，无法获取完整URL链接")
 					_, _ = bot.Send(msg)
