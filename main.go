@@ -283,6 +283,8 @@ func handleUpload(w http.ResponseWriter, r *http.Request) {
 		fileId = msg.Video.FileID
 	case msg.Sticker != nil:
 		fileId = msg.Sticker.FileID
+	case msg.Animation != nil:
+		fileId = msg.Animation.FileID
 	}
 
 	downloadURL := fmt.Sprintf("%s://%s/d?file_id=%s&filename=%s",
