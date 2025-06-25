@@ -180,6 +180,7 @@
             const formData = new FormData();
             formData.append("pwd", pwd);
             formData.append("file", file);
+            formData.append("filesize", file.size);
 
             const xhr = new XMLHttpRequest();
             xhr.open("POST", "/upload", true);
