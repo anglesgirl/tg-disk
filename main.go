@@ -416,10 +416,16 @@ func handleDownload(w http.ResponseWriter, r *http.Request) {
 
 		ext := filepath.Ext(filename)
 		contentType := mime.TypeByExtension(ext)
-		if contentType == "" {
+		switch contentType {
+		case "":
 			contentType = "application/octet-stream"
+		case "image/gif":
+			contentType = "video/mp4"
+		default:
+
 		}
 		w.Header().Set("Content-Type", contentType)
+		// 仅在不能预览时强制下载
 		if !isPreviewable(contentType) {
 			w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
 		}
