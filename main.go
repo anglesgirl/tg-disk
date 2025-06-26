@@ -145,12 +145,11 @@ func main() {
 		updates := bot.GetUpdatesChan(u)
 
 		for update := range updates {
-			if update.Message.From.ID != chatID {
-				_, _ = bot.Send(tgbotapi.NewMessage(update.Message.From.ID, "您无权限使用此机器人"))
-			}
-
 			if update.Message == nil || update.Message.ReplyToMessage == nil {
 				continue
+			}
+			if update.Message.From.ID != chatID {
+				_, _ = bot.Send(tgbotapi.NewMessage(update.Message.From.ID, "您无权限使用此机器人"))
 			}
 
 			// 只处理私聊
@@ -200,7 +199,7 @@ func main() {
 				if fileID != "" {
 					msgRsp = tgbotapi.NewMessage(update.Message.From.ID, "文件 ["+fileName+"] 下载链接：\n"+downloadURL)
 				} else {
-					msgRsp = tgbotapi.NewMessage(update.Message.From.ID, "无法获取自己上传的文件ID")
+					msgRsp = tgbotapi.NewMessage(update.Message.From.ID, "无法获取文件ID")
 				}
 				_, err := bot.Send(msgRsp)
 				if err != nil {
