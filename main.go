@@ -15,8 +15,10 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 //go:embed static/*
@@ -36,9 +38,10 @@ func (s staticFS) Open(name string) (http.File, error) {
 }
 
 var (
-	bot       *tgbotapi.BotAPI
-	chatID    int64
-	accessPwd string
+	bot           *tgbotapi.BotAPI
+	chatID        int64
+	accessPwd     string
+	threadNumbers = 4 // 由于 TG API 限制最大并发数，所以线程数设置为4
 )
 
 func main() {
@@ -241,12 +244,7 @@ func handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	filesizeStr := r.FormValue("filesize")
-	filesize, err := strconv.ParseInt(filesizeStr, 10, 64)
-	if err != nil {
-		filesize = 0 // 或者当做未知大小处理
-	}
-
+	filesize := r.ContentLength
 	file, header, err := r.FormFile("file")
 	if err != nil {
 		http.Error(w, "读取文件失败: "+err.Error(), http.StatusBadRequest)
@@ -264,10 +262,8 @@ func handleUpload(w http.ResponseWriter, r *http.Request) {
 	origFilename := header.Filename
 	const chunkSize = 20 * 1024 * 1024
 	var fileIDs []string
-	buf := make([]byte, chunkSize)
-	index := 0
 
-	// 小于20MB直接上传
+	// 小文件直接上传
 	if filesize > 0 && filesize <= chunkSize {
 		tmpPath := filepath.Join(tmpDir, header.Filename)
 		tmp, err := os.Create(tmpPath)
@@ -293,17 +289,8 @@ func handleUpload(w http.ResponseWriter, r *http.Request) {
 		}
 
 		var fileId string
-		switch {
-		case msg.Document != nil:
+		if msg.Document != nil {
 			fileId = msg.Document.FileID
-		case msg.Audio != nil:
-			fileId = msg.Audio.FileID
-		case msg.Video != nil:
-			fileId = msg.Video.FileID
-		case msg.Sticker != nil:
-			fileId = msg.Sticker.FileID
-		case msg.Animation != nil:
-			fileId = msg.Animation.FileID
 		}
 
 		downloadURL := fmt.Sprintf("%s://%s/d?file_id=%s&filename=%s",
@@ -319,7 +306,10 @@ func handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 大于20MB分块上传
+	// 读取文件并分块写入临时文件
+	chunkPaths := []string{}
+	buf := make([]byte, chunkSize)
+	index := 0
 	for {
 		n, err := io.ReadFull(file, buf)
 		if err != nil && err != io.ErrUnexpectedEOF && err != io.EOF {
@@ -329,30 +319,60 @@ func handleUpload(w http.ResponseWriter, r *http.Request) {
 		if n == 0 {
 			break
 		}
-
 		chunkPath := filepath.Join(tmpDir, fmt.Sprintf("blob_%d", index))
 		if err := os.WriteFile(chunkPath, buf[:n], 0644); err != nil {
 			http.Error(w, "写入临时分块失败: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-
-		doc := tgbotapi.NewDocument(chatID, tgbotapi.FilePath(chunkPath))
-		doc.Caption = "blob"
-		msg, err := bot.Send(doc)
-		if err != nil {
-			http.Error(w, "上传分块失败: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-		if msg.Document != nil {
-			fileIDs = append(fileIDs, msg.Document.FileID)
-		}
+		chunkPaths = append(chunkPaths, chunkPath)
 		index++
 		if err == io.EOF || n < chunkSize {
 			break
 		}
 	}
 
-	// 构建 fileAll.txt 内容
+	// 并发上传分块
+	type uploadResult struct {
+		Index  int
+		FileID string
+		Err    error
+	}
+	results := make([]uploadResult, len(chunkPaths))
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, threadNumbers)
+
+	for i, chunkPath := range chunkPaths {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(i int, path string) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			doc := tgbotapi.NewDocument(chatID, tgbotapi.FilePath(path))
+			doc.Caption = "blob"
+			msg, err := bot.Send(doc)
+			if err != nil {
+				results[i] = uploadResult{Index: i, Err: fmt.Errorf("上传失败: %v", err)}
+				return
+			}
+			if msg.Document == nil {
+				results[i] = uploadResult{Index: i, Err: fmt.Errorf("上传后未返回 Document")}
+				return
+			}
+			results[i] = uploadResult{Index: i, FileID: msg.Document.FileID}
+		}(i, chunkPath)
+	}
+	wg.Wait()
+
+	// 检查结果
+	for _, res := range results {
+		if res.Err != nil {
+			http.Error(w, fmt.Sprintf("第 %d 个分块上传失败: %v", res.Index, res.Err), http.StatusInternalServerError)
+			return
+		}
+		fileIDs = append(fileIDs, res.FileID)
+	}
+
+	// 构建 fileAll.txt
 	builder := strings.Builder{}
 	builder.WriteString(origFilename + "\n")
 	for _, fid := range fileIDs {
@@ -369,16 +389,12 @@ func handleUpload(w http.ResponseWriter, r *http.Request) {
 	metaDoc := tgbotapi.NewDocument(chatID, tgbotapi.FilePath(metaPath))
 	metaDoc.Caption = origFilename
 	msg, err := bot.Send(metaDoc)
-	if err != nil {
+	if err != nil || msg.Document == nil {
 		http.Error(w, "上传 fileAll.txt 失败: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	fileID := ""
-	if msg.Document != nil {
-		fileID = msg.Document.FileID
-	}
-
+	fileID := msg.Document.FileID
 	downloadURL := fmt.Sprintf("%s://%s/d?file_id=%s", getScheme(r), r.Host, fileID)
 	result := UploadResult{
 		Filename:    origFilename,
@@ -489,34 +505,69 @@ func handleDownload(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("开始下载合并大文件，文件名: %s，共 %d 个分块", origFilename, len(blobFileIDs))
 
-	for idx, fid := range blobFileIDs {
-		log.Printf("下载分块 %d/%d: %s", idx+1, len(blobFileIDs), fid)
-		tgBlob, err := bot.GetFile(tgbotapi.FileConfig{FileID: fid})
-		if err != nil {
-			http.Error(w, fmt.Sprintf("获取分块 %s 失败: %v", fid, err), http.StatusInternalServerError)
-			return
-		}
-		blobURL := fmt.Sprintf("https://api.telegram.org/file/bot%s/%s", bot.Token, tgBlob.FilePath)
-		partResp, err := http.Get(blobURL)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("下载分块 %s 失败: %v", fid, err), http.StatusInternalServerError)
-			return
-		}
+	// 并发下载每个块，顺序写入
+	type result struct {
+		index int
+		data  []byte
+		err   error
+	}
 
-		if partResp.StatusCode != http.StatusOK {
-			partResp.Body.Close()
-			http.Error(w, fmt.Sprintf("下载分块 %s 返回状态异常: %d", fid, partResp.StatusCode), http.StatusInternalServerError)
-			return
-		}
+	var (
+		wg          sync.WaitGroup
+		sem         = make(chan struct{}, threadNumbers)
+		partData    = make([][]byte, len(blobFileIDs))
+		downloadErr error
+	)
 
-		// 复制数据时确认全部复制完毕
-		nCopied, err := io.Copy(w, partResp.Body)
-		partResp.Body.Close()
+	for i, fid := range blobFileIDs {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(index int, fileID string) {
+			defer wg.Done()
+			defer func() { <-sem }()
+
+			tgBlob, err := bot.GetFile(tgbotapi.FileConfig{FileID: fileID})
+			if err != nil {
+				downloadErr = fmt.Errorf("获取分块 %s 失败: %v", fileID, err)
+				return
+			}
+			blobURL := fmt.Sprintf("https://api.telegram.org/file/bot%s/%s", bot.Token, tgBlob.FilePath)
+			resp, err := http.Get(blobURL)
+			if err != nil {
+				downloadErr = fmt.Errorf("下载分块 %s 失败: %v", fileID, err)
+				return
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode != http.StatusOK {
+				downloadErr = fmt.Errorf("下载分块 %s 状态码异常: %d", fileID, resp.StatusCode)
+				return
+			}
+
+			data, err := io.ReadAll(resp.Body)
+			if err != nil {
+				downloadErr = fmt.Errorf("读取分块 %s 失败: %v", fileID, err)
+				return
+			}
+
+			partData[index] = data
+		}(i, fid)
+	}
+
+	wg.Wait()
+
+	if downloadErr != nil {
+		http.Error(w, downloadErr.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	for i, data := range partData {
+		log.Printf("写入分块 %d/%d 字节数: %d", i+1, len(partData), len(data))
+		_, err := w.Write(data)
 		if err != nil {
-			http.Error(w, fmt.Sprintf("写入响应失败（分块 %s）: %v", fid, err), http.StatusInternalServerError)
+			http.Error(w, fmt.Sprintf("写入响应失败（分块 %d）: %v", i, err), http.StatusInternalServerError)
 			return
 		}
-		log.Printf("分块 %s 下载并写入完毕，字节数: %d", fid, nCopied)
 		flusher.Flush()
 	}
 
@@ -556,4 +607,49 @@ func isPreviewable(contentType string) bool {
 		strings.HasPrefix(contentType, "video/") ||
 		strings.HasPrefix(contentType, "audio/") ||
 		contentType == "application/pdf"
+}
+
+func GetMaxConcurrency() int {
+	numCPU := runtime.NumCPU()
+	defaultConcurrency := numCPU // 适合 I/O 密集型任务，如上传、下载等
+
+	goos := runtime.GOOS
+	switch goos {
+	case "linux":
+		// 优先使用 /proc/sys/kernel/threads-max
+		if data, err := os.ReadFile("/proc/sys/kernel/threads-max"); err == nil {
+			if val, err := strconv.Atoi(strings.TrimSpace(string(data))); err == nil && val > 0 {
+				return min(defaultConcurrency, val/2) // 给自己用一半线程
+			}
+		}
+		// 尝试读取 ulimit -u
+		if data, err := os.ReadFile("/proc/self/limits"); err == nil {
+			lines := strings.Split(string(data), "\n")
+			for _, line := range lines {
+				if strings.Contains(line, "max user processes") {
+					fields := strings.Fields(line)
+					if len(fields) >= 4 {
+						if val, err := strconv.Atoi(fields[3]); err == nil {
+							return min(defaultConcurrency, val/2)
+						}
+					}
+				}
+			}
+		}
+	case "windows":
+		return min(defaultConcurrency, 2048) // 保守估计
+	case "darwin": // macOS
+		return min(defaultConcurrency, 2048)
+	default:
+		return defaultConcurrency
+	}
+
+	return defaultConcurrency
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

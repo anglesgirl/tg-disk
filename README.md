@@ -97,6 +97,13 @@ cd /app/tg-disk && docker-compose up -d
         }
 ```
 
+### 🔑文件上传 API 示例
+
+```bash
+# url、文件路径自行修改
+curl -X POST http://127.0.0.1:8080/upload -F "pwd=yohann" -F "file=@C:\Users\Yohann\Desktop\TikTok 21.1.0.ipa"
+```
+
 ## 🔍页面展示
 
 ![image.png](./img/1.png)
