@@ -1,6 +1,6 @@
 # tg-disk
 
-> 🤖利用Telegram接口，♾️️无限容量，不限制文件格式，不限制文件大小（大文件会分块上传），不限制文件内容😏，占用很少的内存和磁盘空间📁（可执行文件不到6MB，docker镜像不到20MB），轻巧方便。 文件都存储在Telegram☁️端，拥有良好的安全性🔒和持久性。 上传成功会生成HTML、Markdown、BBCode三种形式的外链🔗，可以用来当做图床、文件下载url。
+> 🤖利用Telegram接口，♾️️无限容量，不限制文件格式，不限制文件大小（大文件会分块上传），不限制文件内容😏，占用很少的内存和磁盘空间📁（可执行文件不到6MB，docker镜像不到20MB），轻巧方便。 文件都存储在Telegram☁️端，拥有良好的安全性🔒和持久性。 上传成功会生成HTML、Markdown、BBCode三种形式的外链🔗，可以用来当做图床、文件下载url。文件下载时会使用多线程的方式，提升下载速度。
 
 ## 💻如何部署
 
@@ -12,7 +12,7 @@
 
 - `-port`：服务运行端口（可以不用配置，默认为8080）
 - `-bot_token`：Telegram机器人Token
-- `-chat_id`：Telegram个人ID（如果不配置，则默认所有人都可以操作机器人）
+- `-chat_id`：Telegram个人ID
 - `-access_pwd`：前端 web 页面访问的密码，出于安全考虑，必须配置
 - `-proxy`：代理url（可以不用配置，目前仅支持HTTP代理）
 - `-base_url`：用于TG机器人回复指定文件`get`或者`/get`获取完整URL链接（可以不用配置）
@@ -26,7 +26,7 @@ nohup ./tg_disk -port 8080 -bot_token 7430196666:AAHgQ_XXXX -chat_id 6194666666 
 快速启动后台运行：
 
 ```bash
-nohup ./tg_disk -bot_token 7430196666:AAHgQ_XXXX -access_pwd yohann > /dev/null 2>&1 &
+nohup ./tg_disk -bot_token 7430196666:AAHgQ_XXXX -chat_id 6194666666 -access_pwd yohann > /dev/null 2>&1 &
 ```
 
 #### Windows环境
@@ -79,7 +79,7 @@ services:
 cd /app/tg-disk && docker-compose up -d
 ```
 
-## 👶如何使用
+### 👶如何使用
 
 部署成功后，直接`http://IP:端口`即可访问，支持同时上传多个文件，**文件大小无限制**，大于20MB的文件会分块上传，最后生成一个`fileAll.txt`文件。私聊机器人指定某个文件（如果是分块文件，指定`fileAll.txt`该文件）回复`get`或者`/get`，即可获取完整的URL链接，且分块文件下载时能够自动获取到文件名及后缀，无需修改下载文件名称。
 
