@@ -79,11 +79,11 @@ services:
 cd /app/tg-disk && docker-compose up -d
 ```
 
-### 👶如何使用
+## 👶如何使用
 
 部署成功后，直接`http://IP:端口`即可访问，支持同时上传多个文件，**文件大小无限制**，大于20MB的文件会分块上传，最后生成一个`fileAll.txt`文件。私聊机器人指定某个文件（如果是分块文件，指定`fileAll.txt`该文件）回复`get`或者`/get`，即可获取完整的URL链接，且分块文件下载时能够自动获取到文件名及后缀，无需修改下载文件名称。
 
-### 🌏Nginx反向代理
+## 🌏Nginx反向代理
 
 核心配置：
 
@@ -97,7 +97,7 @@ cd /app/tg-disk && docker-compose up -d
         }
 ```
 
-### 🔑文件上传 API 示例
+## 🔑文件上传 API 示例
 
 ```bash
 # url、文件路径自行修改
