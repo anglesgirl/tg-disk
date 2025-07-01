@@ -153,6 +153,7 @@ func main() {
 			}
 			if update.Message.From.ID != chatID {
 				_, _ = bot.Send(tgbotapi.NewMessage(update.Message.From.ID, "您无权限使用此机器人"))
+				continue
 			}
 
 			// 只处理私聊
