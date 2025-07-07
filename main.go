@@ -140,8 +140,8 @@ func main() {
 	}
 
 	go func() {
-		//_, _ = bot.Send(tgbotapi.NewMessage(chatID, "🤖tg-disk服务启动成功🎉🎉\n\n"+
-		//	"指定文件回复get获取URL链接\n\n源码地址：https://github.com/Yohann0617/tg-disk"))
+		_, _ = bot.Send(tgbotapi.NewMessage(chatID, "🤖tg-disk服务启动成功🎉🎉\n\n"+
+			"指定文件回复get获取URL链接\n源码地址：https://github.com/Yohann0617/tg-disk"))
 
 		u := tgbotapi.NewUpdate(0)
 		u.Timeout = 60
@@ -266,7 +266,7 @@ func handleUpload(w http.ResponseWriter, r *http.Request) {
 
 	// 小文件直接上传
 	if filesize > 0 && filesize <= chunkSize {
-		tmpPath := filepath.Join(tmpDir, header.Filename)
+		tmpPath := filepath.Join(tmpDir, origFilename)
 		tmp, err := os.Create(tmpPath)
 		if err != nil {
 			http.Error(w, "创建临时文件失败: "+err.Error(), http.StatusInternalServerError)
@@ -280,53 +280,28 @@ func handleUpload(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		ext := filepath.Ext(header.Filename)
-		contentType := mime.TypeByExtension(ext)
-		println(contentType)
 		var fileId string
-		if strings.HasPrefix(contentType, "video") {
-			video := tgbotapi.NewVideo(chatID, tgbotapi.FilePath(tmpPath))
-			video.Caption = header.Filename
-			msg, err := bot.Send(video)
-			if err != nil {
-				log.Println("上传到 Telegram 失败: "+err.Error(), err)
-				http.Error(w, "上传到 Telegram 失败: "+err.Error(), http.StatusInternalServerError)
-				return
-			}
-			if msg.Video != nil {
-				fileId = msg.Video.FileID
-			}
-		} else if strings.HasPrefix(contentType, "audio") {
-			audio := tgbotapi.NewAudio(chatID, tgbotapi.FilePath(tmpPath))
-			audio.Caption = header.Filename
-			msg, err := bot.Send(audio)
-			if err != nil {
-				log.Println("上传到 Telegram 失败: "+err.Error(), err)
-				http.Error(w, "上传到 Telegram 失败: "+err.Error(), http.StatusInternalServerError)
-				return
-			}
-			if msg.Audio != nil {
-				fileId = msg.Audio.FileID
-			}
-		} else {
-			doc := tgbotapi.NewDocument(chatID, tgbotapi.FilePath(tmpPath))
-			doc.Caption = header.Filename
-			msg, err := bot.Send(doc)
-			if err != nil {
-				log.Println("上传到 Telegram 失败: "+err.Error(), err)
-				http.Error(w, "上传到 Telegram 失败: "+err.Error(), http.StatusInternalServerError)
-				return
-			}
-			if msg.Document != nil {
-				fileId = msg.Document.FileID
-			}
+		doc := tgbotapi.NewDocument(chatID, tgbotapi.FilePath(tmpPath))
+		doc.Caption = origFilename
+		msg, err := bot.Send(doc)
+		if err != nil {
+			log.Println("上传到 Telegram 失败: "+err.Error(), err)
+			http.Error(w, "上传到 Telegram 失败: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if msg.Document != nil {
+			fileId = msg.Document.FileID
+		} else if msg.Video != nil {
+			fileId = msg.Video.FileID
+		} else if msg.Audio != nil {
+			fileId = msg.Audio.FileID
 		}
 
 		downloadURL := fmt.Sprintf("%s://%s/d?file_id=%s&filename=%s",
-			getScheme(r), r.Host, fileId, header.Filename)
+			getScheme(r), r.Host, fileId, origFilename)
 
 		result := UploadResult{
-			Filename:    header.Filename,
+			Filename:    origFilename,
 			FileID:      fileId,
 			DownloadURL: downloadURL,
 		}
@@ -460,14 +435,24 @@ func handleDownload(w http.ResponseWriter, r *http.Request) {
 
 		ext := filepath.Ext(filename)
 		contentType := mime.TypeByExtension(ext)
+
 		switch contentType {
 		case "":
-			contentType = "application/octet-stream"
+			if strings.Contains(strings.ToLower(ext), ".mp3") {
+				contentType = "audio/mpeg"
+			} else if strings.Contains(strings.ToLower(ext), ".flac") {
+				contentType = "audio/x-flac"
+			} else if strings.Contains(strings.ToLower(ext), ".mp4") {
+				contentType = "video/mp4"
+			} else {
+				contentType = "application/octet-stream"
+			}
 		case "image/gif":
 			contentType = "video/mp4"
 		default:
 
 		}
+
 		w.Header().Set("Content-Type", contentType)
 		// 仅在不能预览时强制下载
 		if !isPreviewable(contentType) {
