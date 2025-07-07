@@ -140,8 +140,8 @@ func main() {
 	}
 
 	go func() {
-		_, _ = bot.Send(tgbotapi.NewMessage(chatID, "🤖tg-disk服务启动成功🎉🎉\n\n"+
-			"指定文件回复get获取URL链接\n\n源码地址：https://github.com/Yohann0617/tg-disk"))
+		//_, _ = bot.Send(tgbotapi.NewMessage(chatID, "🤖tg-disk服务启动成功🎉🎉\n\n"+
+		//	"指定文件回复get获取URL链接\n\n源码地址：https://github.com/Yohann0617/tg-disk"))
 
 		u := tgbotapi.NewUpdate(0)
 		u.Timeout = 60
@@ -280,18 +280,46 @@ func handleUpload(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		doc := tgbotapi.NewDocument(chatID, tgbotapi.FilePath(tmpPath))
-		doc.Caption = header.Filename
-		msg, err := bot.Send(doc)
-		if err != nil {
-			log.Println("上传到 Telegram 失败: "+err.Error(), err)
-			http.Error(w, "上传到 Telegram 失败: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-
+		ext := filepath.Ext(header.Filename)
+		contentType := mime.TypeByExtension(ext)
+		println(contentType)
 		var fileId string
-		if msg.Document != nil {
-			fileId = msg.Document.FileID
+		if strings.HasPrefix(contentType, "video") {
+			video := tgbotapi.NewVideo(chatID, tgbotapi.FilePath(tmpPath))
+			video.Caption = header.Filename
+			msg, err := bot.Send(video)
+			if err != nil {
+				log.Println("上传到 Telegram 失败: "+err.Error(), err)
+				http.Error(w, "上传到 Telegram 失败: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+			if msg.Video != nil {
+				fileId = msg.Video.FileID
+			}
+		} else if strings.HasPrefix(contentType, "audio") {
+			audio := tgbotapi.NewAudio(chatID, tgbotapi.FilePath(tmpPath))
+			audio.Caption = header.Filename
+			msg, err := bot.Send(audio)
+			if err != nil {
+				log.Println("上传到 Telegram 失败: "+err.Error(), err)
+				http.Error(w, "上传到 Telegram 失败: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+			if msg.Audio != nil {
+				fileId = msg.Audio.FileID
+			}
+		} else {
+			doc := tgbotapi.NewDocument(chatID, tgbotapi.FilePath(tmpPath))
+			doc.Caption = header.Filename
+			msg, err := bot.Send(doc)
+			if err != nil {
+				log.Println("上传到 Telegram 失败: "+err.Error(), err)
+				http.Error(w, "上传到 Telegram 失败: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+			if msg.Document != nil {
+				fileId = msg.Document.FileID
+			}
 		}
 
 		downloadURL := fmt.Sprintf("%s://%s/d?file_id=%s&filename=%s",
